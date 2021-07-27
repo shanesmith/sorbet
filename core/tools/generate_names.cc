@@ -404,7 +404,7 @@ NameDef names[] = {
     {"export_", "export"},
     {"PackageSpec", "PackageSpec", true},
     {"PackageRegistry", "<PackageRegistry>", true},
-    {"PackageMethods", "<PackageMethods>", true},
+    {"PackageTests", "<PackageTests>", true},
 
     // GlobalState initEmpty()
     {"Top", "<top>", true},
@@ -488,6 +488,7 @@ NameDef names[] = {
     {"NonForcingConstants", "NonForcingConstants", true},
     {"VERSION", "VERSION", true},
     {"Thread", "Thread", true},
+    {"Test", "Test", true}, // TODO will this break people?
 };
 
 void emit_name_header(ostream &out, NameDef &name) {
