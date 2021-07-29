@@ -253,8 +253,8 @@ ast::ExpressionPtr parts2literal(const vector<core::NameRef> &parts, core::LocOf
     return name;
 }
 
-// Prefix a constant reference with a name: `Foo::Bar` -> `<name>::Foo::Bar`
-ast::ExpressionPtr prependName(ast::ExpressionPtr scope, core::NameRef name) {
+// Prepend to a scope `Foo::Bar` some prefix -> `<toPrepend>::Foo::Bar`
+ast::ExpressionPtr prependScope(ast::ExpressionPtr scope, ast::ExpressionPtr toPrepend) {
     // For `Bar::Baz::Bat`, `UnresolvedConstantLit` will contain `Bar`.
     auto *lastConstLit = ast::cast_tree<ast::UnresolvedConstantLit>(scope);
     if (lastConstLit != nullptr) {
@@ -266,13 +266,17 @@ ast::ExpressionPtr prependName(ast::ExpressionPtr scope, core::NameRef name) {
     // If `lastConstLit` is `nullptr`, then `scope` should be EmptyTree.
     ENFORCE(lastConstLit != nullptr || ast::isa_tree<ast::EmptyTree>(scope));
 
-    auto scopeToPrepend = name2Expr(name, name2Expr(core::Names::Constants::PackageRegistry()));
     if (lastConstLit == nullptr) {
-        return scopeToPrepend;
+        return toPrepend;
     } else {
-        lastConstLit->scope = move(scopeToPrepend);
+        lastConstLit->scope = move(toPrepend);
         return scope;
     }
+}
+
+// Prefix a constant reference with a name: `Foo::Bar` -> `<PackageRegistry>::<name>::Foo::Bar`
+ast::ExpressionPtr prependName(ast::ExpressionPtr scope, core::NameRef name) {
+    return prependScope(move(scope), name2Expr(name, name2Expr(core::Names::Constants::PackageRegistry())));
 }
 
 ast::UnresolvedConstantLit *verifyConstant(core::MutableContext ctx, core::NameRef fun, ast::ExpressionPtr &expr) {
@@ -547,6 +551,7 @@ struct PackageInfoFinder {
                 return ImportType::Test;
             default:
                 ENFORCE(false);
+                Exception::notImplemented();
         }
     }
 
@@ -711,7 +716,7 @@ private:
             }
             node = child.get();
         }
-        node->source = {importedPackage.name.mangledName, loc, importType}; // TODO not always normal
+        node->source = {importedPackage.name.mangledName, loc, importType};
     }
 
     void makeModule(core::Context ctx, ImportTree *node, vector<core::NameRef> &parts, ast::ClassDef::RHS_store &modRhs,
@@ -811,7 +816,7 @@ ast::ParsedFile rewritePackage(core::Context ctx, ast::ParsedFile file, const Pa
         ImportTreeBuilder treeBuilder(*package);
         for (auto &import : package->importedPackageNames) {
             auto &imported = import.name;
-            auto importedPackage = packageDB.getPackageByMangledName(imported.mangledName);
+            auto *importedPackage = packageDB.getPackageByMangledName(imported.mangledName);
             if (importedPackage == nullptr) {
                 if (auto e = ctx.beginError(imported.loc, core::errors::Packager::PackageNotFound)) {
                     e.setHeader("Cannot find package `{}`", imported.toString(ctx));
@@ -834,6 +839,13 @@ ast::ParsedFile rewritePackage(core::Context ctx, ast::ParsedFile file, const Pa
         testImportedPackages =
             treeBuilder.makeModule(ctx, ImportType::Test); // TODO Also need to add alias for original pkg
     }
+
+    auto assignRhs = prependName(package->name.fullName.toLiteral(core::LocOffsets::none()), package->name.mangledName);
+    auto assign = ast::MK::Assign(
+        core::LocOffsets::none(),
+        prependScope(package->name.fullName.toLiteral(core::LocOffsets::none()), name2Expr(package->name.mangledName)),
+        std::move(assignRhs));
+    testImportedPackages.emplace_back(std::move(assign));
 
     auto packageNamespace =
         ast::MK::Module(core::LocOffsets::none(), core::LocOffsets::none(),
