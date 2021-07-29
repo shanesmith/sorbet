@@ -899,7 +899,10 @@ DispatchResult dispatchCallSymbol(const GlobalState &gs, const DispatchArgs &arg
             if (!hasKwargs) {
                 ait += numKwargs;
             }
-        } else if (kwSplatIsHash) {
+        } else if (kwSplatIsHash && absl::c_none_of(data->arguments(), [](const auto &arg) {
+                       return arg.flags.isKeyword && arg.flags.isRepeated;
+                   })) {
+            // A keyword splat was passed in, but none of the declared arguments are keyword splats
             if (auto e = gs.beginError(args.callLoc(), errors::Infer::UntypedSplat)) {
                 e.setHeader("Passing a hash where the specific keys are unknown to a method taking keyword "
                             "arguments");
@@ -2179,7 +2182,7 @@ public:
         // args[0] is the receiver
         // args[1] is the method
         // args[2] is the block
-        // args[3...] are the remaining arguements
+        // args[3...] are the remaining arguments
         // equivalent to (args[0]).args[1](*args[3..], &args[2])
 
         if (args.args.size() < 3) {
